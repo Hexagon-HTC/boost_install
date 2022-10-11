@@ -178,8 +178,10 @@ rule generate-cmake-variant- ( target : sources * : properties * )
 
     print.text "# link=$(link)" "" : true ;
 
+    local variant_path ;
     if $(link) = static
     {
+        variant_path = "lib/" ;
         print.text
 
             "if(DEFINED Boost_USE_STATIC_LIBS)"
@@ -198,6 +200,7 @@ rule generate-cmake-variant- ( target : sources * : properties * )
     }
     else
     {
+        variant_path = "lib/" ;
         print.text
 
             "if(DEFINED Boost_USE_STATIC_LIBS)"
@@ -269,8 +272,10 @@ rule generate-cmake-variant- ( target : sources * : properties * )
 
     print.text "# variant=$(variant)" "" : true ;
 
+    local variant_vs = "Debug" ;
     if $(variant) = debug
     {
+        variant_path = $(variant_path)"Debug" ;
         print.text
 
             "if(NOT \"${Boost_USE_DEBUG_LIBS}\" STREQUAL \"\" AND NOT Boost_USE_DEBUG_LIBS)"
@@ -282,6 +287,8 @@ rule generate-cmake-variant- ( target : sources * : properties * )
     }
     else
     {
+        variant_path = $(variant_path)"Release" ;
+        variant_vs = "Release" ;
         print.text
 
             "if(NOT \"${Boost_USE_RELEASE_LIBS}\" STREQUAL \"\" AND NOT Boost_USE_RELEASE_LIBS)"
@@ -320,10 +327,27 @@ rule generate-cmake-variant- ( target : sources * : properties * )
         ""
         "set_target_properties($(target) PROPERTIES"
         "  IMPORTED_LINK_INTERFACE_LANGUAGES_$(variant:U) CXX"
-        "  IMPORTED_LOCATION_$(variant:U) \"${_BOOST_LIBDIR}/$(fname)\""
-        "  )"
-        ""
         : true ;
+
+    if ( $(toolset) = vc141 || $(toolset) = vc140 ) && $(link) = shared
+    {
+
+        print.text
+
+            "  IMPORTED_IMPLIB_$(variant:U) \"${_IMPORT_PREFIX}/$(variant_path)/$(fname)\""
+            "  IMPORTED_LOCATION_$(variant:U) \"${_IMPORT_PREFIX}/bin/$(variant_vs)/$(name).dll\""
+            "  )"
+            : true ;
+    }
+    else
+    {
+        print.text
+
+            "  IMPORTED_LOCATION_$(variant:U) \"${_IMPORT_PREFIX}/lib/$(variant_vs)/$(fname)\""
+            "  )"
+            ""
+            : true ;
+    }
 
     if $(variant) = release
     {
@@ -374,6 +398,9 @@ local rule tag ( name : type ? : property-set )
     local link = [ $(property-set).get <link> ] ;
     .debug "  link=" $(link) ;
 
+    local variant = [ $(property-set).get <variant> ] ;
+    .debug "  variant=" $(variant) ;
+
     local python = ;
 
     local relevant = [ $(property-set).get <relevant> ] ;
@@ -388,7 +415,7 @@ local rule tag ( name : type ? : property-set )
     local r = [ boostcpp.tag $(name) : STATIC_LIB : $(property-set) ] ;
 
     r = $(r:S=$(name:S)) ;
-    r = $(r:B=$(r:B)-$(link)) ;
+    r = $(r:B=$(r:B)-$(link)-$(variant)) ;
 
     if $(python)
     {
@@ -523,6 +550,9 @@ rule generate-cmake-config- ( target : sources * : properties * )
     local library-type = [ $(ps).get <library-type> ] ;
     .info "  library-type=" $(library-type) ;
 
+    local link = [ $(ps).get <link> ] ;
+    .info "  link=" $(link) ;
+
     local includedir = [ $(ps).get <boost-install.includedir> ] ;
     .info "  includedir=" $(includedir) ;
 
@@ -558,13 +588,51 @@ rule generate-cmake-config- ( target : sources * : properties * )
 
     print.text
 
+        "get_filename_component(_BOOST_LIBDIR \"${_BOOST_CMAKEDIR}/../\" ABSOLUTE)"
+        ""
+        "get_filename_component(_IMPORT_PREFIX \"${CMAKE_CURRENT_LIST_FILE}\" PATH)"
+        "get_filename_component(_IMPORT_PREFIX \"${_IMPORT_PREFIX}\" PATH)"
+        "get_filename_component(_IMPORT_PREFIX \"${_IMPORT_PREFIX}\" PATH)"
+        "get_filename_component(_IMPORT_PREFIX \"${_IMPORT_PREFIX}\" PATH)"
+        "if(_IMPORT_PREFIX STREQUAL \"/\")"
+        "  set(_IMPORT_PREFIX \"\")"
+        "endif()"
+        ""
+        : true ;
+
+    print.text
+
         ""
         "# Create imported target $(ltarget)"
-        "add_library($(ltarget) $(library-type) IMPORTED)"
+        : true ;
+
+    if $(library-type) = INTERFACE
+    {
+        print.text
+
+            "add_library($(ltarget) $(library-type) IMPORTED)"
+            : true ;
+    }
+    else
+    {
+        print.text
+
+            "add_library($(ltarget) $(link:U) IMPORTED)"
+            : true ;
+    }
+
+    local interface_def = "BOOST_ALL_NO_LIB" ;
+    if $(link) = shared
+    {
+        interface_def = "BOOST_ALL_DYN_LINK" ;
+    }
+
+    print.text
+
         ""
         "set_target_properties($(ltarget) PROPERTIES"
         "  INTERFACE_INCLUDE_DIRECTORIES \"\${_BOOST_INCLUDEDIR}\""
-        "  INTERFACE_COMPILE_DEFINITIONS \"BOOST_ALL_NO_LIB\""
+        "  INTERFACE_COMPILE_DEFINITIONS \"$(interface_def)\""
         ")"
         ""
         : true ;
@@ -667,6 +735,28 @@ rule generate-cmake-config- ( target : sources * : properties * )
             ""
             : true ;
         }
+
+        if $(name) = boost_iostreams
+        {
+            print.text
+
+            "find_package(zlib CONFIG)"
+            "if(NOT zlib_FOUND")
+            "    set(boost_iostreams_FOUND 0)"
+            "    set(boost_iostreams_NOT_FOUND_MESSAGE \"A required dependency, zlib, has not been found.\")"
+            "    return()"
+            "endif()"
+            "find_package(bzip2 CONFIG)"
+            "if(NOT bzip2_FOUND")
+            "    set(boost_iostreams_FOUND 0)"
+            "    set(boost_iostreams_NOT_FOUND_MESSAGE \"A required dependency, bzip2, has not been found.\")"
+            "    return()"
+            "endif()"
+            ""
+            "target_link_libraries(Boost::iostreams INTERFACE zlib::zlib bzip2::bzip2)"
+
+            : true ;
+        }
     }
     else
     {
@@ -700,13 +790,14 @@ rule generate-cmake-config ( project name : property-set : sources * )
     local version = [ $(property-set).get <version> ] ;
     local location = [ $(property-set).get <location> ] ;
     local library-type = [ $(property-set).get <library-type> ] ;
+    local plink = [ $(property-set).get <link> ] ;
     local includedir = [ $(property-set).get <boost-install.includedir> ] ;
     local libdir = [ $(property-set).get <boost-install.libdir> ] ;
 
     local ps = [ property-set.create
         <name>$(pname) <version>$(version) <location>$(location)
         <library-type>$(library-type) <boost-install.includedir>$(includedir)
-        <boost-install.libdir>$(libdir) ] ;
+        <boost-install.libdir>$(libdir) <link>$(plink) ] ;
 
     local result ;
 
