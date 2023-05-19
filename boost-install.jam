@@ -505,21 +505,6 @@ rule generate-cmake-variant- ( target : sources * : properties * )
     }
 
     .info "  deps3=" $(deps3) ;
-
-    if $(deps3) && $(link) = static
-    {
-        print.text
-
-            "if(CMAKE_CONFIGURATION_TYPES)"
-            "  set_property(TARGET $(target) APPEND PROPERTY INTERFACE_LINK_LIBRARIES"
-            "    \"$<$<CONFIG:$(variant)>:$(deps3:J=;)>\")"
-            "else()"
-            "  set_property(TARGET $(target) APPEND PROPERTY INTERFACE_LINK_LIBRARIES"
-            "    $(deps3:J= ))"
-            "endif()"
-            ""
-            : true ;
-    }
 }
 
 actions generate-cmake-variant-
@@ -895,6 +880,28 @@ rule generate-cmake-config- ( target : sources * : properties * )
             "find_dependency(Threads)"
             "set_property(TARGET $(ltarget) APPEND PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads)"
             ""
+            : true ;
+        }
+
+        if $(name) = boost_iostreams
+        {
+            print.text
+
+            "find_package(zlib CONFIG)"
+            "if(NOT zlib_FOUND")
+            "    set(boost_iostreams_FOUND 0)"
+            "    set(boost_iostreams_NOT_FOUND_MESSAGE \"A required dependency, zlib, has not been found.\")"
+            "    return()"
+            "endif()"
+            "find_package(bzip2 CONFIG)"
+            "if(NOT bzip2_FOUND")
+            "    set(boost_iostreams_FOUND 0)"
+            "    set(boost_iostreams_NOT_FOUND_MESSAGE \"A required dependency, bzip2, has not been found.\")"
+            "    return()"
+            "endif()"
+            ""
+            "target_link_libraries(Boost::iostreams INTERFACE zlib::zlib bzip2::bzip2)"
+
             : true ;
         }
 
