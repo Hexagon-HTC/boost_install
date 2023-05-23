@@ -155,6 +155,8 @@ macro(boost_find_component comp required quiet)
     list(APPEND Boost_LIBRARIES Boost::${__boost_comp_nv})
     set(Boost_${_BOOST_COMP}_LIBRARY Boost::${__boost_comp_nv})
 
+    target_compile_definitions(Boost::${__boost_comp_nv} INTERFACE "BOOST_ALL_NO_LIB")
+
     if(NOT "${comp}" STREQUAL "${__boost_comp_nv}" AND NOT TARGET Boost::${comp})
 
       # Versioned target alias (f.ex. Boost::python27) for compatibility
