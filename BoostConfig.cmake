@@ -163,9 +163,6 @@ macro(boost_find_component comp required quiet)
 
     endif()
 
-    target_compile_definitions(Boost::${__boost_comp_nv}
-      INTERFACE "BOOST_AUTO_LINK_SYSTEM"
-    )
   endif()
 
   unset(_BOOST_REQUIRED)
